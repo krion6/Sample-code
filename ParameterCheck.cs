@@ -1,10 +1,7 @@
 using Autodesk.Revit.DB;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.Design;
-using System.Diagnostics;
 using System.Linq;
-using System.Text;
 
 namespace QC__Checker.ViewModel
 {
@@ -29,7 +26,8 @@ namespace QC__Checker.ViewModel
             public bool IsBoolean { get; set; }
         }
 
-        private static readonly Dictionary<string, RequiredParameterInfo> RequiredParameters = new Dictionary<string, RequiredParameterInfo>
+        private static readonly Dictionary<string, RequiredParameterInfo> RequiredParameters =
+            new Dictionary<string, RequiredParameterInfo>
         {
             { "AGF_DevelopmentUse", new RequiredParameterInfo { StorageType = StorageType.String } },
             { "AGF_UseQuantum", new RequiredParameterInfo { StorageType = StorageType.String } },
@@ -56,97 +54,64 @@ namespace QC__Checker.ViewModel
             { "ACN_CloseTime", new RequiredParameterInfo { StorageType = StorageType.String } }
         };
 
-        public List<ParameterCheckResult> CheckParameters(Document doc, ElementId activeViewId)
+        // 🔧 FIX 1: Removed unused activeViewId parameter
+        public List<ParameterCheckResult> CheckParameters(Document doc)
         {
             var results = new List<ParameterCheckResult>();
 
-            // Areas in host document
+            // =========================
+            // HOST DOCUMENT – AREAS
+            // =========================
             var areaCollector = new FilteredElementCollector(doc)
                 .OfCategory(BuiltInCategory.OST_Areas)
                 .WhereElementIsNotElementType();
 
             foreach (Element area in areaCollector)
             {
-                foreach (var paramName in RequiredParameters.Keys)
+                foreach (var kvp in RequiredParameters)
                 {
+                    string paramName = kvp.Key;
+                    var expectedType = kvp.Value.StorageType;
+
                     Parameter param = area.LookupParameter(paramName);
-                    var expectedType = RequiredParameters[paramName].StorageType;
-                    StorageType? actualType = param?.StorageType;
 
                     if (param == null)
                     {
-                        results.Add(new ParameterCheckResult
-                        {
-                            FilePath = doc.PathName,
-                            ElementId = area.Id.ToString(),
-                            Parameter = paramName,
-                            Message = "Parameter undefined",
-                            CheckPassed = false,
-                            ModelType = "Host",
-                            ExpectedStorageType = expectedType,
-                            ActualStorageType = null
-                        });
+                        results.Add(CreateResult(doc.PathName, area.Id, paramName,
+                            "Parameter undefined", false, "Host", expectedType, null));
+                        continue;
                     }
-                    else if (param.StorageType != expectedType)
+
+                    if (param.StorageType != expectedType)
                     {
-                        results.Add(new ParameterCheckResult
-                        {
-                            FilePath = doc.PathName,
-                            ElementId = area.Id.ToString(),
-                            Parameter = paramName,
-                            Message = $"Parameter defined as {param.StorageType} instead of {expectedType}",
-                            CheckPassed = false,
-                            ModelType = "Host",
-                            ExpectedStorageType = expectedType,
-                            ActualStorageType = param.StorageType
-                        });
+                        results.Add(CreateResult(doc.PathName, area.Id, paramName,
+                            $"Parameter defined as {param.StorageType} instead of {expectedType}",
+                            false, "Host", expectedType, param.StorageType));
+                        continue;
                     }
-                    else
+
+                    // 🔧 Time validation (Host)
+                    if (IsTimeParameter(paramName))
                     {
-                        // Custom format check for ACN_OpenTime and ACN_CloseTime
-                        if ((paramName == "ACN_OpenTime" || paramName == "ACN_CloseTime") && param.AsString() != null)
-                        {
-                            string value = param.AsString();
-                            bool validFormat = TimeSpan.TryParseExact(value, @"hh\:mm\:ss", null, out _);
-                            results.Add(new ParameterCheckResult
-                            {
-                                FilePath = doc.PathName,
-                                ElementId = area.Id.ToString(),
-                                Parameter = paramName,
-                                Message = validFormat ? "Pass" : "Invalid time format (expected hh:mm:ss)",
-                                CheckPassed = validFormat,
-                                ModelType = "Host",
-                                ExpectedStorageType = expectedType,
-                                ActualStorageType = param.StorageType
-                            });
-                        }
-                        else
-                        {
-                            results.Add(new ParameterCheckResult
-                            {
-                                FilePath = doc.PathName,
-                                ElementId = area.Id.ToString(),
-                                Parameter = paramName,
-                                Message = "Pass",
-                                CheckPassed = true,
-                                ModelType = "Host",
-                                ExpectedStorageType = expectedType,
-                                ActualStorageType = param.StorageType
-                            });
-                        }
+                        ValidateTime(param, doc.PathName, area.Id, paramName,
+                            "Host", expectedType, results);
+                        continue;
                     }
+
+                    results.Add(CreateResult(doc.PathName, area.Id, paramName,
+                        "Pass", true, "Host", expectedType, param.StorageType));
                 }
             }
 
-            // Check other categories for parameters present (non-Area usage)
+            // =========================
+            // NON-AREA USAGE CHECK
+            // =========================
             var categoriesToCheck = new List<BuiltInCategory>
             {
                 BuiltInCategory.OST_Doors,
                 BuiltInCategory.OST_Rooms,
                 BuiltInCategory.OST_Walls
             };
-
-            var nonAreaUsage = new Dictionary<string, HashSet<string>>();
 
             foreach (var cat in categoriesToCheck)
             {
@@ -159,101 +124,130 @@ namespace QC__Checker.ViewModel
                     foreach (var paramName in RequiredParameters.Keys)
                     {
                         Parameter param = element.LookupParameter(paramName);
-                        if (param != null)
-                        {
-                            var categoryName = element.Category?.Name ?? cat.ToString();
-                            if (!nonAreaUsage.TryGetValue(categoryName, out var set))
-                            {
-                                set = new HashSet<string>();
-                                nonAreaUsage[categoryName] = set;
-                            }
-                            set.Add(paramName);
+                        if (param == null) continue;
 
-                            results.Add(new ParameterCheckResult
-                            {
-                                FilePath = doc.PathName,
-                                ElementId = element.Id.ToString(),
-                                Parameter = paramName,
-                                Message = $"Parameter found on non-Area family/category: {categoryName}. Should Exist Only in Areas",
-                                CheckPassed = false,
-                                ModelType = "Host",
-                                ExpectedStorageType = RequiredParameters[paramName].StorageType,
-                                ActualStorageType = param.StorageType
-                            });
-                        }
+                        string categoryName = element.Category?.Name ?? cat.ToString();
+
+                        results.Add(CreateResult(doc.PathName, element.Id, paramName,
+                            $"Parameter found on non-Area category: {categoryName}. Should exist only on Areas",
+                            false, "Host",
+                            RequiredParameters[paramName].StorageType,
+                            param.StorageType));
                     }
                 }
             }
 
-            // Check linked documents (areas only)
+            // =========================
+            // LINKED DOCUMENTS – AREAS
+            // =========================
             var linkInstances = new FilteredElementCollector(doc)
                 .OfClass(typeof(RevitLinkInstance))
-                .ToElements()
-                .OfType<RevitLinkInstance>();
+                .Cast<RevitLinkInstance>();
 
-            foreach (var linkInstance in linkInstances)
+            foreach (var link in linkInstances)
             {
-                Document linkedDoc = linkInstance.GetLinkDocument();
+                Document linkedDoc = link.GetLinkDocument();
                 if (linkedDoc == null) continue;
 
-                var linkedAreaCollector = new FilteredElementCollector(linkedDoc)
+                var linkedAreas = new FilteredElementCollector(linkedDoc)
                     .OfCategory(BuiltInCategory.OST_Areas)
                     .WhereElementIsNotElementType();
 
-                foreach (Element area in linkedAreaCollector)
+                foreach (Element area in linkedAreas)
                 {
-                    foreach (var paramName in RequiredParameters.Keys)
+                    foreach (var kvp in RequiredParameters)
                     {
+                        string paramName = kvp.Key;
+                        var expectedType = kvp.Value.StorageType;
+
                         Parameter param = area.LookupParameter(paramName);
-                        var expectedType = RequiredParameters[paramName].StorageType;
 
                         if (param == null)
                         {
-                            results.Add(new ParameterCheckResult
-                            {
-                                FilePath = linkedDoc.PathName,
-                                ElementId = area.Id.ToString(),
-                                Parameter = paramName,
-                                Message = "Parameter undefined (linked file)",
-                                CheckPassed = false,
-                                ModelType = "Linked",
-                                ExpectedStorageType = expectedType,
-                                ActualStorageType = null
-                            });
+                            results.Add(CreateResult(linkedDoc.PathName, area.Id, paramName,
+                                "Parameter undefined (linked file)", false, "Linked", expectedType, null));
+                            continue;
                         }
-                        else if (param.StorageType != expectedType)
+
+                        if (param.StorageType != expectedType)
                         {
-                            results.Add(new ParameterCheckResult
-                            {
-                                FilePath = linkedDoc.PathName,
-                                ElementId = area.Id.ToString(),
-                                Parameter = paramName,
-                                Message = $"Parameter defined as {param.StorageType} instead of {expectedType} (linked file)",
-                                CheckPassed = false,
-                                ModelType = "Linked",
-                                ExpectedStorageType = expectedType,
-                                ActualStorageType = param.StorageType
-                            });
+                            results.Add(CreateResult(linkedDoc.PathName, area.Id, paramName,
+                                $"Parameter defined as {param.StorageType} instead of {expectedType} (linked file)",
+                                false, "Linked", expectedType, param.StorageType));
+                            continue;
                         }
-                        else
+
+                        // 🔧 FIX 3: Time validation for LINKED documents
+                        if (IsTimeParameter(paramName))
                         {
-                            results.Add(new ParameterCheckResult
-                            {
-                                FilePath = linkedDoc.PathName,
-                                ElementId = area.Id.ToString(),
-                                Parameter = paramName,
-                                Message = "Pass (linked file)",
-                                CheckPassed = true,
-                                ModelType = "Linked",
-                                ExpectedStorageType = expectedType,
-                                ActualStorageType = param.StorageType
-                            });
+                            ValidateTime(param, linkedDoc.PathName, area.Id, paramName,
+                                "Linked", expectedType, results);
+                            continue;
                         }
+
+                        results.Add(CreateResult(linkedDoc.PathName, area.Id, paramName,
+                            "Pass (linked file)", true, "Linked", expectedType, param.StorageType));
                     }
                 }
             }
 
             return results;
+        }
+
+        // =========================
+        // HELPER METHODS
+        // =========================
+        private static bool IsTimeParameter(string name)
+        {
+            return name == "ACN_OpenTime" || name == "ACN_CloseTime";
+        }
+
+        private static void ValidateTime(
+            Parameter param,
+            string filePath,
+            ElementId elementId,
+            string paramName,
+            string modelType,
+            StorageType expectedType,
+            List<ParameterCheckResult> results)
+        {
+            string value = param.AsString();
+
+            bool valid = !string.IsNullOrEmpty(value) &&
+                         TimeSpan.TryParseExact(value, @"hh\:mm\:ss", null, out _);
+
+            results.Add(CreateResult(
+                filePath,
+                elementId,
+                paramName,
+                valid ? "Pass" : "Invalid time format (expected hh:mm:ss)",
+                valid,
+                modelType,
+                expectedType,
+                param.StorageType));
+        }
+
+        private static ParameterCheckResult CreateResult(
+            string filePath,
+            ElementId id,
+            string param,
+            string message,
+            bool pass,
+            string modelType,
+            StorageType? expected,
+            StorageType? actual)
+        {
+            return new ParameterCheckResult
+            {
+                FilePath = filePath,
+                ElementId = id.ToString(),
+                Parameter = param,
+                Message = message,
+                CheckPassed = pass,
+                ModelType = modelType,
+                ExpectedStorageType = expected,
+                ActualStorageType = actual
+            };
         }
     }
 }
