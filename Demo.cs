@@ -1,5 +1,12 @@
-void Demo()
+using System;
+
+namespace DemoApp
 {
-    int temp = 5; // unused variable
-    Console.WriteLine("Test");
+    public class DemoClass
+    {
+        public void Demo()
+        {
+            Console.WriteLine("Test");
+        }
+    }
 }
