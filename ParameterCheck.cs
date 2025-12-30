@@ -20,8 +20,12 @@ namespace QC__Checker.ViewModel
 
     public class ParameterCheck
     {
-        // ❌ TEST ISSUE: Hardcoded secret for Snyk/DeepCode testt
-        private const string ApiToken = "sk_test_1234567890_SECRET";
+                // ❌ TEST ISSUE: SQL Injection (Snyk WILL detect this)
+              public void UnsafeSql(string userInput)
+              {
+                   string query = "SELECT * FROM Users WHERE Name = '" + userInput + "'";
+                   Console.WriteLine(query);
+              }
 
         private class RequiredParameterInfo
         {
