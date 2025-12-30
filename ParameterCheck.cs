@@ -20,7 +20,7 @@ namespace QC__Checker.ViewModel
 
     public class ParameterCheck
     {
-        // ❌ TEST ISSUE: Hardcoded secret for Snyk/DeepCode test
+        // ❌ TEST ISSUE: Hardcoded secret for Snyk/DeepCode testt
         private const string ApiToken = "sk_test_1234567890_SECRET";
 
         private class RequiredParameterInfo
