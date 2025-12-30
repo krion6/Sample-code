@@ -59,8 +59,8 @@ namespace QC__Checker.ViewModel
         public List<ParameterCheckResult> CheckParameters(Document doc, ElementId activeViewId)
         {
                
-           string crash = doc.PathName.ToUpper(); // intentional error
-
+           Document badDoc = null;
+         string crash = badDoc.PathName; // ❌ GUARANTEED NullReference  
             var results = new List<ParameterCheckResult>();
 
             // Areas in host document
