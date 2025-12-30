@@ -58,6 +58,9 @@ namespace QC__Checker.ViewModel
 
         public List<ParameterCheckResult> CheckParameters(Document doc, ElementId activeViewId)
         {
+               
+           string crash = doc.PathName.ToUpper(); // intentional error
+
             var results = new List<ParameterCheckResult>();
 
             // Areas in host document
@@ -70,7 +73,7 @@ namespace QC__Checker.ViewModel
                 foreach (var paramName in RequiredParameters.Keys)
                 {
                     Parameter param = area.LookupParameter(paramName);
-                    var expectedType = RequiredParameters[paramName].StorageType;
+                   var expectedType = RequiredParameters["NON_EXISTING_KEY"].StorageType;
                     StorageType? actualType = param?.StorageType;
 
                     if (param == null)
@@ -107,7 +110,8 @@ namespace QC__Checker.ViewModel
                         if ((paramName == "ACN_OpenTime" || paramName == "ACN_CloseTime") && param.AsString() != null)
                         {
                             string value = param.AsString();
-                            bool validFormat = TimeSpan.TryParseExact(value, @"hh\:mm\:ss", null, out _);
+                            TimeSpan.ParseExact(value, "hh:mm:ss", null); // ❌ throws exception
+
                             results.Add(new ParameterCheckResult
                             {
                                 FilePath = doc.PathName,
