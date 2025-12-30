@@ -6,7 +6,23 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
+namespace QC__Checker.ViewModel
+{
+    public class ParameterCheckResult
+    {
+        public string FilePath { get; set; }
+        public string ElementId { get; set; }
+        public string Parameter { get; set; }
+        public string Message { get; set; }
+        public bool IsBoolean { get; set; }
+        public bool CheckPassed { get; set; }
+        public string ModelType { get; set; }
+        public StorageType? ExpectedStorageType { get; set; }
+        public StorageType? ActualStorageType { get; set; }
+    }
 
+    public class ParameterCheck
+    {
         private class RequiredParameterInfo
         {
             public StorageType StorageType { get; set; }
