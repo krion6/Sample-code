@@ -1,4 +1,4 @@
-namespace QC__Checker
+namespace QCChecker
 {
     public static class StringUtils
     {
